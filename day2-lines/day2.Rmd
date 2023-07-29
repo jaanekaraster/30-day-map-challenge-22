@@ -1,0 +1,88 @@
+---
+title: "day2"
+author: "jaanekaraster"
+date: "2022-11-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(tidyr) # to clean up NA's
+library(ggplot2)
+library(jpeg)
+library(patchwork)
+library(geojsonsf)
+library(rjson)
+library(geojsonio)
+library(rgeos)
+
+```
+
+```{r code}
+# read in the railways data
+rail_to_mumbai <- geojson_sf("to_csmt_wr_points.geojson")
+stations = fromJSON(file = "stations.json")
+trains = geojson_sf("trains.json", crs = 4326)
+schedules = fromJSON(file = "schedules.json")
+districts = topojson_read("india_districts.json", crs = 4326)
+districts = geojson_sf("district_2011.json", crs = 4326)
+states = geojson_sf("ind_adm1_states_official.geojson")
+
+#determine which stations are <= 700 km away or have time difference of < 12 hours or 720 min
+#each train has departure time, from_station_code, arrival time, to_station_code, duration_m
+#1. Subset the trains data to all the Mumbai-destination trains
+mumbai_dest_trains = trains[trains$to_station_name %in% c('MUMBAI CST','MUMBAI DADAR CENTRAL','MUMBAI BANDRA TERMINUS','Mumbai Central'),]
+
+#2. Save as a layer 1
+st_write(mumbai_dest_trains, "mumbai_dest_trains.geojson")
+
+#3. Filter by trains where duration_h <= 12
+mumbai_dest_trains_overnight = mumbai_dest_trains[mumbai_dest_trains$duration_h <= 12,]
+
+#4. Save as layer 2
+st_write(mumbai_dest_trains_overnight, "mumbai_dest_trains_overnight.geojson")
+
+poly_1 = st_as_sfc(districts)
+line_1 = st_as_sfc(mumbai_dest_trains_overnight)
+st_intersects(line_1,poly_1)
+
+plot(int)
+
+# check for geometry validity
+any(is.na(st_dimension(districts))) # any empty geometries?
+any(is.na(st_is_valid(districts))) # any corrupt geometries?
+any(na.omit(st_is_valid(districts)) == FALSE) # any invalid geometries?
+st_is_valid(districts, reason = TRUE) # why are they invalid?
+# https://r-spatial.org/r/2017/03/19/invalid.html
+districts_valid = districts[st_is_valid(districts), ,drop = FALSE] #drop the invalid geometries
+any(na.omit(st_is_valid(districts_valid)) == FALSE) # check again for invalid geometries, should now be false
+
+# now can do geoprocessing functions
+
+#5. Graph the two geojsons in ggplot
+plot = ggplot() + 
+  geom_sf(data = states, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) + 
+  geom_sf(data = districts, fill = NA, size = 0.1, color = "#909090", alpha = 0.5) + 
+  geom_sf(data = mumbai_dest_trains, aes(colour = "#86AE80"), show.legend = "line", size = 0.5) +
+  geom_sf(data = mumbai_dest_trains_overnight, aes(colour = "#79F165"), show.legend = "line", size = 0.7) +
+  theme(legend.position = "bottom") +  
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), plot.subtitle = element_text(hjust = 0.5), panel.background = element_rect(fill = NA),
+     panel.border = element_rect(fill = NA)) + 
+  labs(x = "", y = "", title = "One Night's Journey from the City of Dreams", subtitle = "Which places are within a 12-hour train journey to Mumbai?", caption = "@jaanekaraster | Data: India Census 2011 Boundaries, https://github.com/datameet/railways") +  
+  scale_color_manual(values = c("#79F165","#86AE80"),labels = c("Within 12 Hours","Over 12 Hours"),name = "Journey Period") + 
+  ggspatial::annotation_scale(
+    location = "bl",
+    bar_cols = c("grey30", "white"),
+    text_family = "Maiandra GD"
+  ) 
+
+plot
+ggsave("day2-lines.png")
+
+```
