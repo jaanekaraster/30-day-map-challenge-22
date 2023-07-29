@@ -1,0 +1,96 @@
+---
+title: "day9"
+author: "jaanekaraster"
+date: "2022-11-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### A Space Map
+
+```{r libraries}
+library(raster)
+library(rgdal)
+
+library(raster)
+# country codes from https://gadm.org/download_country.html
+# code from https://stackoverflow.com/questions/5126745/gadm-maps-cross-country-comparison-graphics
+# night lights data from https://ngdc.noaa.gov/eog/dmsp/downloadV4composites.html
+
+sa <- getData('GADM', country='SAU', level=1)
+uae <- getData('GADM', country='ARE', level=1)
+om <- getData('GADM', country = 'OMN', level=1)
+ym <- getData('GADM', country = 'YEM', level=1)
+pen <- bind(sa,uae,om,ym)
+plot(pen)
+
+plot(pen)
+
+```
+
+
+```{r code}
+## Load libraries and code
+library(maptools)
+library(raster)
+library(sp)
+library(sf)
+library(ggplot2)
+library(ggspatial)
+library(stars)
+
+## Load data 
+# Arabian Peninsula countries
+sa <- getData('GADM', country='SAU', level=0)
+uae <- getData('GADM', country='ARE', level=0)
+om <- getData('GADM', country = 'OMN', level=0)
+ym <- getData('GADM', country = 'YEM', level=0)
+adm0 <- bind(sa,uae,om,ym)
+adm0_1 = st_as_sf(adm0)
+
+```
+
+```{r build the map}
+# Use plot to make the plot
+d<-raster("F182013.v4c_web.stable_lights.avg_vis.tif") # Night light data
+
+projection(d)<-proj4string(adm0) ## Transform projection
+
+
+## Crop raster to include only Arabian Peninsula
+e=extent(adm0)
+r=crop(d,e)
+
+## Plot data for visual inspection
+colfunc <- colorRampPalette(c("black", "yellow")) 
+
+par(mar=c(3,6,3,6))
+plot(r,col=colfunc(20))
+plot(adm0,border="Gray",add=T)
+
+```
+
+```{r ggplot2}
+# Use ggplot2 to make the plot
+img_vis = file.path("F182013.v4c_web.stable_lights.avg_vis.tif")
+
+sat_vis = read_stars(img_vis,RasterIO = list(nBufXsize = 600, nBufYSize = 600))
+
+adm0_2 <- st_transform(adm0_1, crs = st_crs(sat_vis))
+
+ggplot() + 
+  geom_stars(data = sat_vis) + 
+  geom_sf(data = adm0_2,fill = NA, color = "grey")+
+  scale_fill_gradient(low = "black", high = "white",guide="none") + 
+  scale_x_continuous(limits = c(34, 60)) + 
+  scale_y_continuous(limits = c(10,33)) + 
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), plot.subtitle = element_text(hjust = 0.5), panel.background = element_rect(fill = NA),
+     panel.border = element_rect(fill = NA), legend.position = "none") + 
+  labs(x = "", y = "", title = "Rub' al-Khali (The Empty Quarter)", subtitle = "Night Light Data", caption = "@jaanekaraster | Data: NOAA, GADM") 
+
+
+ggsave("day9.png")
+
+```
