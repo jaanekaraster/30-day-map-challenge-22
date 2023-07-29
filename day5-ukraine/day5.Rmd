@@ -1,0 +1,136 @@
+---
+title: "day5"
+author: "jaanekaraster"
+date: "2022-11-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r soil-libraries}
+install.packages('XML')
+library(XML)
+library(rgdal)
+library(gdalUtils)
+library(sf)
+library(dplyr)
+library(leaflet)
+library(mapview)
+library(devtools)
+library(leaflet.opacity)
+library(RColorBrewer)
+library(raster)
+#devtools::install_github("gearslaboratory/gdalUtils")
+#install_github("envirometrix/landmap")
+#devtools::install_github("https://github.com/be-marc/leaflet.opacity", dependencies=TRUE)
+```
+
+
+```{r soil}
+rm(list=ls())
+url = "https://files.isric.org/soilgrids/latest/data/" # Path to the webDAV data.
+
+#using nitrogen
+voi = "nitrogen" # variable of interest
+depth = "15-30cm"
+quantile = "mean"
+(variable = paste(url, voi, sep=""))
+(layer = paste(variable,depth,quantile, sep="_")) # layer of interest 
+(vrt_layer = paste(layer, '.vrt', sep=""))
+#.vrt is actually a folder with tifs in it
+
+#using wrb
+voi = "wrb" # variable of interest
+depth = "Chernozems"
+(variable = paste(url, voi, sep=""))
+(layer = paste(variable,depth, sep="/")) # layer of interest 
+layer
+(vrt_layer = paste(layer, '.vrt', sep=""))
+#maybe use the vrt_layer 
+vrt_layer
+
+#get layer's info
+raster(vrt_layer)
+
+#get layer's info
+nitro = raster("https://files.isric.org/soilgrids/latest/data/nitrogen/nitrogen_15-30cm_mean.vrt")
+#nitro = raster(vrt_layer)
+nitro
+
+
+```
+```{r make-bb}
+#oblast data from https://data.humdata.org/dataset/cod-ab-ukr?
+#download tiff for region of interest 
+ukraine = st_read("ukraine_bounds.geojson") #big bb
+oblasts <- st_read("ukr_oblasts.geojson") #small bb
+rayons <- st_read("ukr_rayons.geojson") #small bb
+eu = st_read("europe.geojson")
+
+
+#filter by oblast
+(myko <- dplyr::filter(oblasts, ADM1_EN =="Mykolaivska"))
+(sk <- dplyr::filter(rayons, ADM2_EN =="Skadovskyi"))
+(ky <- dplyr::filter(rayons, ADM2_EN =="Kyiv"))
+
+#filter all soil raster files for mykolaivska
+igh='+proj=igh +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs'
+myko_igh <- st_transform(myko, igh)
+sk_igh = st_transform(sk, igh)
+ky_igh = st_transform(ky, igh)
+ukr_igh = st_transform(ukraine, igh)
+eu_igh = st_transform(eu,igh)
+#make the bbox
+(bbox = st_bbox(eu_igh))
+#define bbox limits via GDAL
+## ul means upper left
+## lr means lower right
+ulx = bbox$xmin
+uly = bbox$ymax
+lrx= bbox$xmax
+lry = bbox$ymin
+(bb <- c(ulx, uly, lrx, lry))
+bb
+#download the soil layer for this bbox extent
+sg_url="/vsicurl/https://files.isric.org/soilgrids/latest/data/"
+data_nitro = 'nitrogen/nitrogen_15-30cm_mean.vrt'
+data_cherno = 'wrb/Chernozems.vrt' #the specific part of the soil layer we want to get
+lfile_nitro = "nitro_ntest_igh.tif"
+lfile_cherno = "chernozems_ntest_igh.tif" #the destination tif to be built
+
+gdal_translate(paste0(sg_url,data_nitro), lfile_nitro,
+               tr=c(250,250),
+               projwin=bb, #bb of the extent
+               projwin_srs =igh,
+               verbose=TRUE)
+
+
+gdal_translate(paste0(sg_url,data_cherno), lfile_cherno,
+               tr=c(0.5,0.5),
+               projwin=bb, #bb of the extent
+               projwin_srs =igh,
+               verbose=TRUE)
+
+ukr_cherno = raster(lfile_cherno)/100
+ukr_cherno
+
+#reproject using WGS84 coords
+#crs_wgs84 = "+proj=longlat +datum=WGS84 +no_defs" 
+crs_wgs84 = CRS('+init=EPSG:4326')
+(myko_nitro_wgs84 = projectRaster(myko_nitro, crs=crs_wgs84))
+
+ukr_cherno_wgs84 = projectRaster(ukr_cherno, crs=crs_wgs84)
+
+
+```
+```{r map}
+pal <- colorRampPalette(brewer.pal(100, "BrBG"))
+mapview(ukr_cherno_wgs84, col.regions = pal(10), at = seq(0, 1, 0.1), maxpixels =  1327941,legend = TRUE,layer.name = "Chernozem Soil Probability") + 
+  mapview(ukraine,col.regions = "white",alpha.regions = 0.2)
+
+
+```
