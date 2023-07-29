@@ -1,0 +1,74 @@
+---
+title: "day20"
+author: "jaanekaraster"
+date: "2022-11-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r library}
+# https://vialab.mit.edu/tutorials/module/mapping-in-r-street-trees-in-camberville/
+library(sf)
+library(dplyr)
+library(data.table)
+  
+cambridge_trees <- st_read('cambridge_trees.shp') %>%
+  select(c('SpeciesSho','geometry'))
+colors = read.csv("foliage_colors.csv")
+
+#merge based on tree type
+df3 = merge(x = cambridge_trees, y = colors, by.x = "SpeciesSho", by.y = "tree")
+
+
+
+```
+
+
+
+```{r code}
+plot(df3, pch='.', col=df3$hex1)
+library(ggplot2)
+library(osmdata)
+cambridge_bb = getbb("Cambridge, MA")
+available_features()
+available_tags("highway")
+c_water = cambridge_bb %>%
+  opq() %>%
+  add_osm_feature(key = "water", value = "river") %>%
+  osmdata_sf()
+
+c_roads = cambridge_bb %>%
+  opq() %>%
+  add_osm_feature(key = "highway") %>%
+  osmdata_sf()
+
+c_bldgs = cambridge_bb %>%
+  opq() %>% 
+  add_osm_feature(key = "building") %>%
+  osmdata_sf()
+
+d_data = st_as_sf(df3, coords=geometry, crs=4326)
+
+ggplot() + 
+  geom_sf(data = c_roads$osm_lines, colour = "gray") + 
+  geom_sf(data = c_bldgs$osm_polygons, fill = "black", alpha = 0.4) + 
+  geom_sf(data = d_data, colour = d_data$hex1, size = 0.5) +
+  xlim(-71.13,-71.07) + 
+  ylim(42.355,42.375) + 
+  theme(
+  axis.line = element_blank(), 
+  axis.text.x = element_blank(), 
+  axis.text.y = element_blank(),
+  axis.ticks = element_blank(), 
+  axis.title.x = element_blank(), 
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank()
+  ) + 
+  labs(title = "Autumn Foliage in Cambridge, MA, USA", caption = "@jaanekaraster | Data: MIT VIA Learning Lab")
+
+ggsave("day20.png")
+
+
+```
