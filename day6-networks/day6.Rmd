@@ -1,0 +1,123 @@
+---
+title: "day6"
+author: "jaanekaraster"
+date: "2022-11-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r libraries}
+source(file.path(getwd(), 'rgrass7-setup-win-osgeo4w.R'))
+#remotes::install_github("paleolimbot/qgisprocess")
+library(qgisprocess)
+qgis_providers()
+qgis_algo = qgis_algorithms()
+grep("union", qgis_algo$algorithm, value = TRUE)
+qgis_show_help("native:union") #find out what the algorithm does
+alg = "native:union"
+qgis_arguments(alg) |>
+  dplyr::mutate(acceptable_values = unlist(acceptable_values)) |> dplyr::select(name,description,acceptable_values)
+```
+
+
+```{r libraries-2}
+#https://luukvdmeer.github.io/sfnetworks/articles/sfn01_structure.html
+
+library(sfnetworks)
+library(sf)
+library(tidygraph)
+library(tidyverse)
+library(igraph)
+
+library(osmdata)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(units)
+library(tmap)
+library(rgrass7)
+library(link2GI)
+library(nabor)
+```
+
+```{r osm-data}
+#use getbb for entire city network
+bbox = getbb("Lagos", featuretype = "settlement")
+bbox
+
+#or use bbox indices to specify a smaller box
+bbox["x","min"] = 73.496990
+bbox["y","min"] = 4.165559
+bbox["x","max"] = 73.523812
+bbox["y","max"] = 4.181776
+
+
+city_lines = opq(bbox) %>% 
+  add_osm_feature(key = 'highway') %>% 
+  osmdata_sf() %>% 
+  osm_poly2line()
+
+city_center = city_lines$osm_lines
+
+ggplot(data = city_center) + geom_sf()
+```
+
+```{r sf}
+net = as_sfnetwork(city_center)
+plot(net)
+net %>%
+  activate("edges") %>%
+  mutate(weight = edge_length()) %>%
+  activate("nodes") %>%
+  mutate(bc = centrality_betweenness(weights = weight, directed = FALSE))
+
+net %>%
+  activate("nodes") %>%
+  st_as_sf()
+
+st_as_sf(net, "edges")
+plot(net)
+autoplot(net) + ggtitle("Road network of Male, Maldives")
+
+net = net %>%
+  activate("nodes") %>%
+  mutate(bc = centrality_betweenness())
+
+ggplot()+
+geom_sf(data = st_as_sf(net, "edges"), col = "grey50") +
+geom_sf(data = st_as_sf(net, "nodes"), aes(col = bc, size = bc)) +
+ggtitle("Betweenness centrality of Male, Maldives") + theme_bw()
+
+ggsave("day6.png")
+
+
+```
+
+```{r urban-demographics}
+#make plot
+temp <- ggplot() + 
+        geom_sf(data=buff, fill='lightblue', color=NA)  +
+        geom_sf(data=city_boundary_buff, fill='white', size=.3)  +
+        geom_sf(data=buff, fill='gray90', color=NA, alpha=.5)  +
+        geom_sf(data=edges_buff, aes(color=travel_time, size=length))  +
+        geom_sf(data=city_center_sf, color='red', size=.5) +
+        scale_size_continuous(range = c(0.1, .8), guide='none') +
+        scale_color_viridis_c(direction = -1) +
+  labs(title='Walking time to city center',
+       subtitle = 'Brasilia',
+       caption = '@jaanekaraster',
+       color='Minutes') +
+  coord_sf(xlim = c(buff_bb[[1]], buff_bb[[3]]), 
+                 ylim = c(buff_bb[[2]], buff_bb[[4]]), expand = FALSE) + 
+  theme_void() +
+  theme(plot.background = element_rect(fill = "white", color='white'),
+        plot.title = element_text(color = "gray20"),
+        plot.subtitle = element_text(color = "gray40"),
+        plot.caption = element_text(color = "gray"))
+        
+# save figure
+ggsave(temp, file=here::here("img", "aa32k.png"), 
+       dpi=300, width = 14, height = 14, units = 'cm')
+```
