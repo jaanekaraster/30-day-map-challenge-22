@@ -1,0 +1,104 @@
+---
+title: "day1-points"
+author: "@jaanekaraster"
+date: "2022-11-01"
+output: html_document
+---
+
+## The Great Potoo: An Alien Bird
+The Great Potoo (*Nyctibius grandis*) is a weird bird. It's the subject of legends (https://cuyabenolodge.com.ec/tell-me-the-legend-of-the-singing-bird-potoo/) due to its haunting cry. 
+
+
+It looks rather helpless and vaguely demonic. It's also hard to find in the jungle because it blends into the tree bark. 
+
+Nevertheless, its predators include spider monkeys (Ateles geoffroyi)
+
+Potoo data: GBIF.org (29 October 2022) GBIF Occurrence Download https://doi.org/10.15468/dl.wnhjbz
+
+Spider monkey data: GBIF.org (01 November 2022) GBIF Occurrence Download https://doi.org/10.15468/dl.wesxm7
+
+- Panamanian white-faced capuchin: GBIF.org (01 November 2022) GBIF Occurrence Download https://doi.org/10.15468/dl.545r53
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r libraries}
+#install.packages(c("cowplot", "googleway", "ggplot2", "ggrepel", 
+#"ggspatial", "libwgeom", "sf", "rnaturalearth", "rnaturalearthdata"))
+
+```
+
+```{r get-data}
+#potoo data
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(tidyr) # to clean up NA's
+library(ggplot2)
+library(jpeg)
+library(patchwork)
+library(extrafont) # for new fonts
+library(remotes) # for installing fonts
+#remotes::install_version("Rttf2pt1", version = "1.3.8")
+#pkgbuild::check_build_tools(debug=TRUE)
+#extrafont::font_import()
+
+#font_import()
+#fonttable()
+path = "potoo_wikipedia.jpg"
+img = readJPEG(path, native = TRUE)
+
+#read in the CSV's
+#potoo data
+potoo_csv = read.csv("potoo_data.csv")
+potoo_data = st_as_sf(potoo_csv, coords=c("decimalLongitude","decimalLatitude"), crs=4326)
+#spider monkey data
+monkey_csv = read.csv("spider_monkey.csv") %>% drop_na(decimalLongitude)
+monkey_data = st_as_sf(monkey_csv, coords=c("decimalLongitude","decimalLatitude"), crs=4326)
+#capuchin data
+capuchin_csv = read.csv("capuchin.csv",) %>% drop_na(decimalLongitude)
+capuchin_data = st_as_sf(monkey_csv, coords=c("decimalLongitude","decimalLatitude"), crs=4326)
+
+#get natural earth layers
+world <- ne_countries(scale='medium',returnclass = 'sf')
+#urban_areas = ne_download(scale = 50, type = 'urban_areas', category = 'cultural',returnclass = 'sf')
+#pop = ne_download(scale = 110, type = 'populated_places', category = 'cultural',returnclass = 'sf')
+my_y_title = expression(paste(italic("Nyctibius grandis"), ": An Alien Bird"))
+#plot the map
+(base<- ggplot(data = world) +
+     geom_sf(fill = "antiquewhite3") + 
+  #geom_sf(data = urban_areas, colour = "black")+
+  #geom_sf(data = pop, colour = "black") + 
+    geom_sf(data = potoo_data, colour = "red", size = 0.01) +
+    annotate(geom = "text", x = -75, y = 15, label = "Caribbean Sea", 
+    fontface = "italic", color = "grey22", size = 3) +
+    annotate(geom = "text", x = -90, y = 5, label = "Pacific Ocean", 
+    fontface = "italic", color = "grey22", size = 3) +
+    coord_sf(xlim = c(-95, -65), ylim = c(20,-5), expand = FALSE) +
+    theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color="black"), plot.subtitle = element_text(hjust = 0.5), legend.position = "none", panel.background = element_rect(fill = "antiquewhite1"),
+     panel.border = element_rect(fill = NA))) + 
+  labs(x = "", y = "", title = "Realm of the Great Potoo", subtitle = my_y_title, caption = "@jaanekaraster | Data: GBIF.org, Natural Earth") +  ggspatial::annotation_scale(
+    location = "bl",
+    bar_cols = c("grey30", "white"),
+    text_family = "Maiandra GD"
+  ) +
+  ggspatial::annotation_north_arrow(
+    location = "bl", which_north = "true",
+    pad_x = unit(0.2, "in"), pad_y = unit(0.4, "in"),
+    style = ggspatial::north_arrow_nautical(
+      fill = c("grey40", "white"),
+      line_col = "grey20",
+      text_family = "Arial"
+    )
+  ) +
+   inset_element(p = img,
+                left = 0,
+                bottom = 0.7,
+                right = 0.2,
+                top = 1,clip = TRUE) + theme(rect = element_rect(fill = "transparent"))
+
+ggsave("potoo_range.png")
+```
