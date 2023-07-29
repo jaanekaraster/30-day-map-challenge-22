@@ -1,0 +1,209 @@
+---
+title: "day3"
+author: "jaanekaraster"
+date: "2022-11-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r cars}
+library(leaflet)
+library(osmdata)
+library(sf)
+library(dplyr) # data wrangling
+library(tidyr) # data wrangling
+library(ggplot2) # data visualisation
+library(sf) # simple features - geospatial geometries
+library(units) # working with units
+library(mapview) # interactive geometry viewing
+library(ggmap) # downloading raster maps from a variety of sources
+library(ggspatial) # map backgrounds and annotations for ggplot
+  
+```
+
+## Including Plots
+
+```{r pressure, echo=FALSE}
+city_polygon <- getbb("Mumbai",
+                      featuretype = "settlement",
+                      format_out = "polygon")
+
+
+# Get the rectangular bounding box
+city_rect <- getbb("Mumbai", featuretype = "settlement")
+
+# Get the rectangular bounding box
+# city_rect <- getbb("Mumbai", featuretype = "settlement")
+# Get the data from OSM (might take a few seconds)
+greensp_osm <-
+  opq(bbox = city_rect) %>%  # start query, input bounding box
+  add_osm_feature(key = "leisure",# extract "leisure" features that are park, garden or a golf course
+                  value = c("park", "nature_reserve", "golf_course","garden","pitch")) %>%
+  osmdata_sf() %>%  # query OSM and return as simple features (sf)
+  trim_osmdata(city_polygon) # limit data to the Mumbai polygon instead of the rectangular bounding box
+
+streets <- city_rect %>%
+  opq() %>%
+  add_osm_feature("highway", c("motorway", "primary", "secondary", "tertiary")) %>%
+  osmdata_sf()
+
+```
+
+```{r data}
+# Convert POLYGON to MULTIPOLYGON and bind into one sf object.
+greensp_sf <- bind_rows(st_cast(greensp_osm$osm_polygons, "MULTIPOLYGON"),
+                                  greensp_osm$osm_multipolygons) %>% select(name, osm_id, leisure)
+
+
+
+#plot(greensp_sf["leisure"]) # Plot coloured by the value of leisure
+greensp_sf <-
+  greensp_sf %>%
+  #filter(is.na(greensp$leisure) == FALSE) %>%  
+  # remove leisure NAs
+  rename(greensp_type = leisure) %>%
+  # rename leisure to greensp_type
+  st_make_valid()
+  # a good function to use after importing data to make sure shapes are valid
+
+greensp_sf_list <- greensp_sf %>% split(.$greensp_type) # create separate sf by greenspace type
+greensp_sf <- mutate(greensp_sf, area = st_area(greensp_sf)) # add area column
+unique(greensp_sf$greensp_type)
+greensp_sf_private = subset(greensp_sf, greensp_sf$greensp_type == "pitch" | greensp_sf$greensp_type == "golf course", )
+greensp_sf_public = subset(greensp_sf, greensp_sf$greensp_type == "park" | greensp_sf$greensp_type == "garden",)
+
+
+#greensp_sf <- bind_rows(greensp_sf_list) # bind the list into one sf object
+
+# Reorder greenspace types, capitalise, remove underscores
+map_private = 
+  mutate(greensp_sf_private,
+         greensp_type = factor(greensp_type,
+                               levels = c("park", "nature_reserve", "golf_course"),
+                               labels = c("Park", "Nature reserve", "Golf course")))
+
+map_public = 
+  mutate(greensp_sf_public,
+         greensp_type = factor(greensp_type,
+                               levels = c("park", "garden"),
+                               labels = c("Park", "Garden")))
+
+#expand the bounding box
+city_rect_expanded = city_rect
+city_rect_expanded[1,1][1] = city_rect_expanded[1,1][1]-0.05
+city_rect_expanded[1,2][1] = city_rect_expanded[1,2][1]+0.05
+city_rect_expanded[2,1][1] = city_rect_expanded[2,1][1]-0.05
+city_rect_expanded[2,2][1] = city_rect_expanded[2,2][1]+0.05
+
+#stamen_raster <- get_stamenmap(city_rect_expanded, zoom = 14)
+
+```
+```{r first-plot}
+# Plot map with ggplot
+(greenspaces_map <- ggplot() + 
+  geom_sf(data = streets$osm_lines, inherit.aes = FALSE, color = "#ffbe7f", size = .4, alpha = .8) +
+  geom_sf(data = map_private, fill = "#71FA41", size = 0.3, alpha = 0.5) + 
+  theme_void() +
+  coord_sf(crs = st_crs(4326), expand = FALSE)# get rid of axis ticks, titles
+  )
+    #inset_ggmap(stamen_raster) + # add ggmap background
+    #geom_sf(aes(fill = greensp_type)) + # add sf shapes, coloured by greensp_type
+     +
+    # change the CRS of the sf back to WGS84 to match the ggmap raster
+    #scale_fill_manual(values = c("#44AA99", "#117733", "#AA4499")))
+    # add custom colours from Tol palette (colourblind-friendly)
+```
+
+```{r leaflet}
+library(leaflet)
+library(htmlwidgets)
+library(htmltools)
+
+tag.map.title <- tags$style(HTML("
+  .leaflet-control.map-title { 
+    transform: translate(-50%,20%);
+    position: fixed !important;
+    left: 50%;
+    text-align: center;
+    padding-left: 10px; 
+    padding-right: 10px; 
+    background: #ffffff;
+    font-weight: bold;
+    font-size: 18px;
+    color: #000000;
+  }
+"))
+
+title <- tags$div(
+  tag.map.title, HTML("Public and Private Open Spaces in Mumbai")
+)  
+
+pal_public = colorFactor(palette = c("#71FA41","#9EF87E"), greensp_sf_public$greensp_type)
+pal_private = colorFactor(palette = c("#DD2A11","#F47462"), greensp_sf_private$greensp_type)
+
+
+leaflet() %>%
+  addProviderTiles("CartoDB.DarkMatter", group = "CartoDB") %>%
+  #addPolylines(
+  #  data = streets$osm_lines, opacity = 0.2, weight = 1, color = "white"
+  #) %>% 
+  addPolygons(
+  data = greensp_sf_private$geometry,
+  stroke = FALSE, fillOpacity = 0.9,
+  label = greensp_sf_private$name,
+  color = pal_private(greensp_sf_private$greensp_type)
+) %>% 
+  addPolygons(
+  data = greensp_sf_public$geometry,
+  stroke = FALSE, fillOpacity = 0.9,
+  label = greensp_sf_public$name,
+  color = pal_public(greensp_sf_public$greensp_type)
+) %>%
+  addLegend(title = "Public Open Spaces",
+            pal = pal_public,
+            values = greensp_sf_public$greensp_type, 
+            group = "greensp_sf_public") %>%
+  addLegend(title = "Private Open Spaces",
+            pal = pal_private,
+            values = greensp_sf_private$greensp_type, 
+            group = "greensp_sf_private") %>%
+  addControl(title, position = "topleft", className="map-title")
+
+
+```
+    
+    
+    ```{r stuff}
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), plot.subtitle = element_text(hjust = 0.5), panel.background = element_rect(fill = NA),
+     panel.border = element_rect(fill = NA)) + 
+  labs(title = "Green spaces: Mumbai",
+         subtitle = "Parks and golf courses",
+         caption = paste0("Map tiles by Stamen Design (stamen.com), CC BY 3.0. ",
+                         "http://creativecommons.org/licenses/by/3.0\n",
+                         "Map data © OpenStreetMap contributors, ODbL. ",
+                         "http://www.openstreetmap.org/copyright"))  +  
+  scale_color_manual(values = c("#79F165","#86AE80"),labels = c("Within 12 Hours","Over 12 Hours"),name = "Journey Period") + 
+  ggspatial::annotation_scale(
+    location = "bl",
+    bar_cols = c("grey30", "white"),
+    text_family = "Maiandra GD"
+  ) +
+    #theme(legend.title = element_blank(),
+    #      legend.position = c(.98, .02),
+     #     legend.justification = c("right", "bottom"),
+      #    legend.box.just = "right",
+       #   legend.box.background = element_rect(fill = "white", colour = "gray"),
+        #  legend.margin = margin(6, 6, 6, 6),
+          # move legend to bottom right and customise
+         # plot.margin = margin(12,12,12,12))
+          # add margin around plot
+)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
