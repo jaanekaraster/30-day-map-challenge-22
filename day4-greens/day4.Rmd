@@ -1,0 +1,77 @@
+---
+title: "day4-1"
+author: "jaanekaraster"
+date: "2022-11-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r libraries}
+#https://urbanspatial.github.io/classifying_satellite_imagery_in_R/
+library(raster)
+library(tidyverse)
+library(sf)
+library(rpart)
+library(rpart.plot)
+library(rasterVis)
+library(mapedit)
+library(mapview)
+library(caret)
+library(forcats)
+
+```
+
+```{r code}
+band1 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B1.tif")
+band2 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B2.TIF")
+band3 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B3.TIF")
+band4 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B4.TIF")
+band5 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B5.TIF")
+band6 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B6.TIF")
+band7 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_SR_B7.TIF")
+band10 <- raster("LC08_L2SP_180032_20220925_20221004_02_T1_ST_B10.TIF")
+
+```
+
+```{r plot}
+image = stack(band1,band2,band3,band4,band5,band6,band7,band10)
+nlayers(image)
+crs(image)
+```
+```{r true-color-composite}
+par(col.axis="white",col.lab="white",tck=0)
+plotRGB(image, r = 4, g = 3, b = 2, axes = TRUE, 
+        stretch = "lin", main = "True Color Composite")
+box(col="white")
+
+```
+```{r false-color}
+par(col.axis="white",col.lab="white",tck=0)
+plotRGB(image, r = 5, g = 4, b = 3, axes = TRUE, stretch = "lin", main = "False Color Composite")
+box(col="white")
+
+```
+```{r ndvi}
+ndvi <- (image[[5]] - image[[4]])/(image[[5]] + image[[4]])
+min(ndvi@data@values, na.rm = T) #minimum should be between -1 and 1
+max(ndvi@data@values, na.rm = T) #maximum should be between -1 and 1
+
+#convert raster to df and use geom_tile
+as(ndvi, "SpatialPixelsDataFrame") %>% 
+  as.data.frame() %>%
+  ggplot(data = .) +
+  geom_tile(aes(x = x, y = y, fill = layer)) +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(title = "NDVI for Sea of Marmara", 
+       x = " ", 
+       y = " ") +
+  scale_fill_gradient(high = "#CEE50E", 
+                      low = "#087F28",
+                      name = "NDVI")
+
+```
