@@ -1,0 +1,43 @@
+---
+title: "day8"
+author: "jaanekaraster"
+date: "2022-11-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(osmextract)
+library(sf)
+
+```
+
+```{r code}
+#open a saved OSM PBF file because getting it online not possible due to timeout/large file request
+obj = oe_read("congo-democratic-republic-latest.osm.pbf")
+library(dplyr)
+obj$man_made
+
+streets = obj %>%
+  dplyr::filter(highway %in% c('primary', "primary_link", 'secondary',"secondary_link", 
+                               'tertiary', "tertiary_link", "trunk", "trunk_link", 
+                               "residential", "cycleway", "living_street", "unclassified", 
+                               "motorway", "motorway_link", "pedestrian", "steps", "track"))
+
+
+# <- bind_rows(st_cast(obj$polygons, "MULTIPOLYGON"),
+ #                                 obj$
+  #              $osm_multipolygons) %>% select(name, osm_id, leisure)
+
+library(ggplot2)
+plot(sf::st_geometry(obj), reset = FALSE, col = "lightgrey")
+
+ggplot() + 
+  geom_sf(data = streets, aes(color = "black", size = 10))
+
+
+
+```
