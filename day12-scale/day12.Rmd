@@ -1,0 +1,111 @@
+---
+title: "day12"
+author: "jaanekaraster"
+date: "2022-11-12"
+output: html_document
+---
+## Scale
+Make a map about scale, show how important it is
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+#Credit: https://tmfujis.wordpress.com/category/programming/r/
+library(osmdata)
+library(sf)
+library(dplyr) # data wrangling
+library(tidyr) # data wrangling
+library(ggplot2) # data visualisation
+library(ggmap)
+```
+
+
+```{r code}
+# Get the rectangular bounding box
+city_rect <- getbb("Mumbai", featuretype = "settlement")
+dc_rect <- getbb("Washington DC", featuretype = "settlement")
+
+streets <- city_rect %>%
+  opq() %>%
+  add_osm_feature("highway", c("motorway", "primary", "secondary", "tertiary")) %>%
+  osmdata_sf()
+
+streets_dc <- dc_rect %>%
+  opq() %>%
+  add_osm_feature("highway", c("motorway", "primary", "secondary", "tertiary")) %>%
+  osmdata_sf()
+
+ggplot() + 
+  geom_sf(data = streets$osm_lines, inherit.aes = FALSE, color = "#ffbe7f", size = .4, alpha = .8) +
+  geom_sf(data = streets_dc$osm_lines, inherit.aes = FALSE, color = "purple", size = .4, alpha = .8) +
+  theme_bw()
+
+```
+
+
+```{r conversion}
+R <- 6371
+#convert distance to longitudinal range given a latitude
+delta.lambda <- function(d, phi=0.0) {
+    2*asin(sin(d/R/2)/cos(phi))
+}
+ 
+#create longitudinal and latitudinal ranges which define a suquare with length d
+map.range <- function(d, lat=0.0, lon=0.0){
+    dphi <- d/R*360/2/pi
+    dlambd <- delta.lambda(d, phi=lat*2*pi/360)*360/2/pi
+ 
+    lonrange <- lon + c(-dlambd/2, dlambd/2)
+    latrange <- lat + c(-dphi/2, dphi/2)
+ 
+    rang <- c(lonrange, latrange)
+    names(rang) <- c("left", "right", "bottom", "top")
+    return (rang)
+}
+```
+
+```{r conversion2}
+d <- 15 #15kmx15km map
+z <- 12 #zoom level
+mumbai_center <- c(19.0760,72.8777)
+mumbai <- map.range(d, lat=mumbai_center[1], lon=mumbai_center[2])
+mumbai_map <- get_stamenmap(mumbai, zoom=z, maptype="toner")
+ggmap(mumbai_map)
+
+ 
+dc_center <- c(38.9072, -77.0369)
+dc <- map.range(d, lat=dc_center[1], lon=dc_center[2])
+dc_map <- get_stamenmap(dc,zoom=z, maptype="toner")
+ggmap(dc_map)
+```
+
+
+```{r superimpose}
+# x.min = -77.12, x.max = -76.96, y.min = 38.8, y.max = 38.97
+	
+translucent.raster <- function(map){
+    tmp <- as.matrix(map)
+    tmp <- gsub("$", "55", tmp)
+    tmp <- gsub("FFFFFF", "0000FF", tmp)
+    ras <- as.raster(tmp)
+    attributes(ras) <- attributes(map)
+    ras
+}
+devtools::install_github('oswaldosantos/ggsn')
+library(ggsn)
+ggmap(dc_map) + 
+inset_raster(translucent.raster(mumbai_map), xmin=dc["left"], ymin=dc["bottom"], xmax=dc["right"], ymax=dc["top"]) +
+scalebar(x.min = -77.12, x.max = -76.96, y.min = 38.8, y.max = 38.97,dist = 0.2, dist_unit = "km", transform = TRUE, model = "WGS84") + 
+theme(axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.margin = unit(c(0, 0, -1, -1), 'lines')) +
+  xlab('') +
+  ylab('')
+
+ggsave("day12.png")
+
+```
+```
