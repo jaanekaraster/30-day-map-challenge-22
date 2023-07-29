@@ -1,0 +1,183 @@
+---
+title: "day15"
+author: "jaanekaraster"
+date: "2022-11-15"
+output: html_document
+---
+
+## Food and Drink
+Where does food come from? Where do people consume the most coffee? Make a map from food
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+# subways per square mile in the US
+# compared to other sub chains
+# https://www.theguardian.com/tv-and-radio/2022/may/23/john-oliver-subway-franchisees
+# https://www.data-to-viz.com/graph/hexbinmap.html
+# us state-level hexbins and code: https://rud.is/b/2015/05/15/u-s-drought-monitoring-with-hexbin-state-maps-in-r/
+# nice formatting for ggplot2 maps: https://timogrossenbacher.ch/2016/12/beautiful-thematic-maps-with-ggplot2-only/
+# use 3085 projection for contiguous US: https://michaelminn.net/tutorials/r-projections/index.html
+# ggplot2 color palette cheatsheet: https://www.nceas.ucsb.edu/sites/default/files/2020-04/colorPaletteCheatsheet.pdf
+
+library(sf)
+library(geojsonsf)
+library(broom) #fortifies the data to make it into a dataframe that ggplot2 can use
+library(ggplot2)
+library(dplyr)
+library(leaflet)
+library(rgeos)
+library(hexbin)
+library(RColorBrewer)
+library(viridis)
+```
+```{r theme}
+theme_map <- function(...) {
+  theme_minimal() +
+  theme(
+   plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank(),
+    # panel.grid.minor = element_line(color = "#ebebe5", size = 0.2),
+    panel.grid.major = element_line(color = "#ebebe5", size = 0.2),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "#f5f5f2", color = NA), 
+    panel.background = element_rect(fill = "#f5f5f2", color = NA), 
+    legend.background = element_rect(fill = "#f5f5f2", color = NA)
+   )
+}
+
+
+```
+```{r data}
+data_subway = read.csv("day15/subways_us.csv",sep=",",header=T)
+data_jj = read.csv("day15/jimmyjohns_us.csv",sep=",",header=T)
+data_q = read.csv("day15/quiznos_us.csv",sep=",",header=T)
+data_jm = read.csv("day15/jerseymikes_us.csv",sep=",",header=T)
+
+data = rbind(data_subway,data_jj,data_q,data_jm)
+names(data)[names(data) == "X"] = "x"
+names(data)[names(data) == "Y"] = "y"
+
+data = data %>%
+  filter(data$addr.country == "US" & data$addr.city != "Mt. Berry Floyd" & data$addr.state != "AK" & data$addr.state != "HI") 
+
+#try this: https://vialab.mit.edu/tutorials/module/mapping-in-r-street-trees-in-camberville/
+#data_sf = st_as_sf(coords = c("x","y"),crs = 3085)
+#hex <- st_make_grid(data, cellsize=2640, square=FALSE) %>%
+#  st_sf() %>%
+#  rowid_to_column('hex_id')
+#plot(hex)
+```
+
+```{r plot}
+ggplot(data,aes(x = x, y = y))+
+  geom_hex(bins=50) + 
+  scale_fill_viridis(
+    trans = "log",
+    breaks = c(1,10,100,1000,10000),
+    name = "Outlets per Hex \n (1 Hex ~ 100 sq mi/260 sq km)") +
+  facet_wrap(~brand,ncol=2)+
+    theme_map() + 
+  labs(
+    x = NULL, 
+    y = NULL, 
+    title = "Sandwich Outlets across America",
+    caption = "@jaanekaraster | Data: alltheplaces.xyz")
+
+ggsave("day15/day15.png")
+```
+
+
+
+
+
+
+```{r bins}
+bin = hexbin(subway_csv$X,subway_csv$Y)
+plot(bin,main="Subway Locations",colramp = colorRampPalette(c("White","Yellow")))
+
+
+subway = geojson_sf("day15/subways.geojson")
+subway = subset(subway,subway$`addr:country` == "US" & subway$`addr:city` != "Mt. Berry Floyd" & subway$`addr:state` != "AK" & subway$`addr:state` != "HI") #subset for only US outlets
+subway_sf = st_as_sf(subway, coords=c("lon","lat"), crs=3085) #make into SF
+subway_sf = st_transform(subway_sf,3085)
+
+```
+
+
+
+```{r hexes}
+# make a hex grid for US
+area_honeycomb_grid = st_make_grid(subway_sf, c(0.5,0.5), what = "polygons", square = FALSE)
+
+plot(area_honeycomb_grid)
+# To sf and add grid ID
+honeycomb_grid_sf = st_sf(area_honeycomb_grid) %>%
+  # add grid ID
+  mutate(grid_id = 1:length(lengths(area_honeycomb_grid)))
+honeycomb_grid_sf = na.omit(honeycomb_grid_sf) #remove nan's
+
+# add up restaurants by hex
+subway_in_hex = lengths(st_intersects(honeycomb_grid_sf, subway_sf))
+honeycomb_grid_sf$subway_in_hex = subway_in_hex
+
+```
+
+
+```{r make-map}
+bins <- c(1,5,10,25,50,100,200,500,1000)
+pal <- colorBin("YlOrRd", domain = honeycomb_grid_sf$subway_in_hex, bins = bins)
+
+
+leaflet() %>% #creates base map
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(lat = 38, lng = -90, zoom = 3) %>%
+  addPolygons(
+    data = honeycomb_grid_sf,
+    fillColor = ~pal(subway_in_hex),
+    stroke = FALSE, 
+    fillOpacity = 0.7,
+    label = honeycomb_grid_sf$subway_in_hex,
+    group = "Subways"
+    )
+
+
+```
+
+```{r set hex-size}
+#get width given height
+wd_hex <- function(height){
+  tri_side <- height/2
+  sma_side <- height/4
+  width <- 2*sqrt(tri_side^2 - sma_side^2)
+  return(width)
+}
+
+#now to figure out the area if you want
+#side is simply height/2 in geom_hex
+hex_area <- function(side){
+  area <- 6 * (  (sqrt(3)*side^2)/4 )
+  return(area)
+}
+
+#So if you want your hexagon to have a regular area need the inverse function
+#Gives height and width if you want a specific area
+hex_dim <- function(area){
+  num <- 4*area
+  den <- 6*sqrt(3)
+  vert <- 2*sqrt(num/den)
+  horz <- wd_hex(height)
+  return(c(vert,horz))
+}
+
+my_dims <- hex_dim(1000^2)   #making it a square kilometer
+sqrt(hex_area(my_dims[1]/2)) #check to make sure it is square km
+
+```
