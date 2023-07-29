@@ -1,0 +1,241 @@
+---
+title: "day14"
+author: "jaanekaraster"
+date: "2022-11-14"
+output: html_document
+---
+## Hexagons
+A map containing hexagons
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r libraries}
+# How to aggregate points in hexagons: https://urbandatapalette.com/post/2021-08-tessellation-sf/
+library(mapview)
+library(sf)
+library(dplyr)
+library(tmap)
+library(osmdata)
+library(leafpop)
+library(leaflet)
+library(htmltools) #to make leaflet title
+
+```
+
+
+```{r code}
+# import the data
+datacsv = read.csv("res_con_geoapify.csv",stringsAsFactors = FALSE)
+#str(datacsv)
+locs = datacsv %>% 
+  filter(!is.na(geoapify_lon) & !is.na(geoapify_lat)) %>% filter((datacsv$geoapify_lon <= 73.319) & (datacsv$geoapify_lat <= 19.5048)) %>% st_as_sf(coords = c("geoapify_lon","geoapify_lat"),crs=4326)
+
+locs_m = locs %>% filter(locs$likelyGender == "male")
+locs_f = locs %>% filter(locs$likelyGender == "female")
+
+#plot(locs_m$geometry,main="Map")
+```
+
+```{r make-map}
+colors_gender = mapviewColors(x=locs, zcol = "likelyGender", 
+                        colors = c("Red", "Blue","Gray"),
+                        at = c("female","male",""))
+
+pts = mapview(locs, cex = 3, alpha = .5, zcol = "likelyGender", popup = popupTable(locs, zcol= c("Title","likelyGender")),legend = FALSE, col.regions = list("gray","red","blue")) #create interactive mapview of the points
+```
+
+
+```{r grid}
+# make bounding box
+bb = getbb("Mumbai", featuretype = "settlement")
+
+# make grid
+area_fishnet_grid = st_make_grid(locs, c(0.02,0.02), what = "polygons", square = TRUE)
+
+# To sf and add grid ID
+fishnet_grid_sf = st_sf(area_fishnet_grid) %>%
+  # add grid ID
+  mutate(grid_id = 1:length(lengths(area_fishnet_grid)))
+
+# check size of grids
+# mapview(fishnet_grid_sf)
+
+```
+```{r honeycomb}
+area_honeycomb_grid = st_make_grid(locs, c(0.01, 0.01), what = "polygons", square = FALSE)
+
+# To sf and add grid ID
+honeycomb_grid_sf = st_sf(area_honeycomb_grid) %>%
+  # add grid ID
+  mutate(grid_id = 1:length(lengths(area_honeycomb_grid)))
+
+```
+
+```{r pcount-pts-and-grid}
+#count number of points in each box
+#fishnet_grid_sf$n_pts = lengths(st_intersects(fishnet_grid_sf,locs))
+
+#remove grid without value of 0
+#fishnet_count = filter(fishnet_grid_sf, n_pts > 0)
+
+# count number of points in each grid
+# https://gis.stackexchange.com/questions/323698/counting-points-in-polygons-with-sf-package-of-r
+
+m_apts_by_grid = lengths(st_intersects(honeycomb_grid_sf, locs_m))
+f_apts_by_grid = lengths(st_intersects(honeycomb_grid_sf, locs_f))
+honeycomb_grid_sf$ratio = m_apts_by_grid/(m_apts_by_grid + f_apts_by_grid) # i.e. 2m / (2m+3f) = 1:3 = 0.33
+honeycomb_grid_sf$ratio = round(honeycomb_grid_sf$ratio ,digit=2) #round to nearest 2 decimals
+
+#honeycomb_grid_sf$ratio = ifelse(is.finite(honeycomb_grid_sf$ratio), honeycomb_grid_sf$ratio, NA) # inf means that there are X males to 0 females
+honeycomb_grid_sf = na.omit(honeycomb_grid_sf) #remove nan's
+
+# remove grid without value of 0 (i.e. no points in side that grid)
+# honeycomb_count = filter(honeycomb_grid_sf, ratio > 0)
+```
+
+```{r plot}
+#plot the grid in interactive map using tmap
+tmap_mode("view")
+map_grid = 
+  tm_shape(honeycomb_grid_sf) + 
+  tm_fill(
+    col = "ratio",
+    palette = "RdBu",
+    style = "cont",
+    title = "Gender Classification",
+    id = "ratio",
+    showNA = FALSE,
+    alpha = 0.5,
+    popup.vars = c("Number of Apartments: " = "ratio"),
+popup.format = list(
+  ratio = list(format = "f", digits = 2)
+)
+)+  tm_borders(col = "grey40", lwd = 0.7) + 
+   tm_layout(title= 'Gender Ratio of Apartment Names in Mumbai', 
+            title.position = c('right', 'top')) 
+
+map_grid
+pts
+
+```
+
+```{r leaflet}
+bins <- c(0, .1,.2,.3,.4,.5,.6,.7,.8,.9,1)
+pal <- colorBin("RdBu", domain = honeycomb_grid_sf$ratio, bins = bins)
+labels = c("More Feminine","","","","","","","","","More Masculine")
+
+tag.map.caption = tags$style(
+  HTML("
+       .leaflet-control.map-caption {
+       color: black;
+       font-size: 10px;
+        background: rgba(255,255,255,1);
+       "))
+caption <- tags$div(
+  tag.map.caption, HTML("@jaanekaraster | Based on ~9K commercial property listings; Namsor classification engine")
+)  
+
+tag.map.title <- tags$style(
+HTML("
+  .leaflet-control.map-title { 
+    transform: translate(-50%,20%);
+    position: fixed !important;
+    left: 50%;
+    text-align: center;
+    padding-left: 10px; 
+    padding-right: 10px; 
+    background: rgba(255,255,255,1);
+    font-weight: bold;
+    color: black;
+    font-size: 20px;
+  }
+"))
+
+title <- tags$div(
+  tag.map.title, HTML("'Gendered' Apartments in Mumbai")
+)  
+
+leaflet() %>% #creates base map
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(lat = 19.1, lng = 73, zoom = 10) %>%
+  addPolygons(
+    data = honeycomb_grid_sf,
+    fillColor = ~pal(ratio),
+    stroke = FALSE, 
+    fillOpacity = 0.7,
+    label = honeycomb_grid_sf$ratio,
+    group = "Gender Ratio"
+    ) %>%
+  #addCircleMarkers(
+   # data = locs,
+    #lng = locs$lon_matched,
+    #lat = locs$lat_matched,
+    #popup = paste(locs$Title,"<br>",
+    #              locs$addressfull,"<br>",
+    #              "Likely Gender: ",locs$likelyGender,"<br>",
+    #              "Score: ", round(locs$genderScale,digits = 2),"<br>"),
+    #radius=2,
+    #label = locs$addressfull,
+    #fillColor = ~pal(locs$genderScale),
+    #fillOpacity = 1,
+    #stroke = F,
+    #group = "Points"
+    #  ) %>%
+  addControl(caption,position = "bottomright", className = "map-caption") %>%
+  addScaleBar(position = c("bottomright")) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal, 
+    values = honeycomb_grid_sf$ratio,
+    title = "Gender Classification",
+    opacity = 0.9, 
+    labFormat = function(type, cuts, p){
+      paste0(labels)
+    }
+  ) %>%
+  addControl(title, position = "topleft", className="map-title")
+  #addLayersControl( #controls layers https://www.jla-data.net/eng/leaflet-markers-in-r/
+   #     baseGroups = c("Gender Ratio","Points"),
+    #    options = layersControlOptions(collapsed = FALSE) 
+  #)
+  
+
+
+```
+
+```
+%>% #sets default map pan
+      addPolygons( #code for happiness map
+        fillColor = ~mypalettewhi(happiness_score), 
+        stroke=TRUE, 
+        fillOpacity = 0.9, 
+        color="white", 
+        weight=0.7,
+        label = mytext,
+        labelOptions = label,
+        highlightOptions = highlight,
+        group = "World Happiness Index" #group indicates which toggle pane it belongs to
+      ) %>% 
+      addLegend( #happiness legend
+        values=~happiness_score, 
+        opacity=0.9, 
+        title = "World Happiness<br /> Index Score", 
+        position = "bottomleft",
+        colors = c('#ffffb2', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c', '#b10026'),
+        labels = c("Less Happy", "", "", "", "", "", "More Happy"),
+        group = "World Happiness Index"
+      ) %>% 
+      addPolygons( #code for gdp map
+        fillColor = ~mypalettegdp(gdp), 
+        stroke=TRUE, 
+        fillOpacity = 0.9, 
+        color="black", #black is added as highlight as yellows will blend
+        weight=0.7,
+        label = mytext,
+        labelOptions = label,
+        highlightOptions = highlightgdp,
+        group = "GDP"
+
+
+```
