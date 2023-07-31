@@ -1,0 +1,282 @@
+---
+title: "day11"
+author: "jaanekaraster"
+date: "2022-11-11"
+output: html_document
+---
+## Colour Friday: Red
+Make a red map
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r libraries}
+# https://www.kaggle.com/datasets/rohanrao/air-quality-data-in-india?resource=download
+# https://community.rstudio.com/t/display-multiple-plots-with-ggplot-from-loop-function/69035/4
+library(dplyr)
+library(tidyverse)
+library(osmdata)
+library(geojsonsf)
+library(tidyverse)
+library(sf)
+library(gridExtra)
+library(ggplot2)
+
+
+# read in the data
+stations = read.csv("stations_f.csv")
+city_day = read.csv("city_day.csv")
+city_hour = read.csv("city_hour.csv")
+station_day = read.csv("station_day.csv")
+station_hour = read.csv("station_hour.csv")
+
+```
+
+```{r code}
+station_day_df = merge(stations, station_day, by='StationId',all.x = T) # make df combining stations (with lat lon) and day observations
+station_day_df = station_day_df %>% mutate(Date=as.Date(Date, format = "%Y-%m-%d")) # format date for all obs
+
+station_mumbai = subset(station_day_df, City == "Mumbai") #subset by city
+station_delhi = subset(station_day_df, City == "Delhi") #subset by city
+station_bg = subset(station_day_df, City == "Bengaluru") #subset by city
+station_cn = subset(station_day_df, City == "Chennai") #subset by city
+station_hy = subset(station_day_df, City == "Hyderabad") #subset by city
+station_ko = subset(station_day_df, City == "Kolkata") #subset by city
+
+#unique(station_mumbai$StationName) #check unique station names
+
+# 5 years of data, so 5 charts of October each
+# average the observations by StationId and Date containing 10 (October)
+#oct15 = station_mumbai[grepl('2015-10',station_mumbai$Date),]
+#oct16 = station_mumbai[grepl('2016-10',station_mumbai$Date),]
+#oct17 = station_mumbai[grepl('2017-10',station_mumbai$Date),]
+#oct18 = station_mumbai[grepl('2018-10',station_mumbai$Date),]
+#oct19 = station_mumbai[grepl('2019-10',station_mumbai$Date),]
+#oct20 = station_mumbai[grepl('2020-10',station_mumbai$Date),]
+
+# from above, it appears Mumbai doesn't have a large dataset except for 2019
+#all_mumbai_19 = station_mumbai[grepl('2019-',station_mumbai$Date),]
+#all_india_19 = station_day_df[grepl('2019-',station_day_df$Date),]
+
+
+# group Mumbai
+obs_mumbai = station_mumbai %>%
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  filter(StationId != "MH012") %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+obs_mumbai = merge(obs_mumbai, stations, by="StationId",all.x = T) #each row is stationId, month, and average AQI
+# gather the sf's
+point_data_mumbai = st_as_sf(obs_mumbai, coords=c("lon","lat"), crs=4326) #make into point sf
+
+# group Delhi
+obs_delhi = station_delhi %>%
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+obs_delhi = merge(obs_delhi, stations, by="StationId",all.x = T) #each row is stationId, month, and average AQI
+# gather the sf's
+point_data_delhi = st_as_sf(obs_delhi, coords=c("lon","lat"), crs=4326) #make into point sf
+
+# group Bangalore
+obs_bg = station_bg %>%
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+obs_bg = merge(obs_bg, stations, by="StationId",all.x = T) #each row is stationId, month, and average AQI
+# gather the sf's
+point_data_bg = st_as_sf(obs_bg, coords=c("lon","lat"), crs=4326) #make into point sf
+
+# group Chennai
+obs_cn = station_cn %>%
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+obs_cn = merge(obs_cn, stations, by="StationId",all.x = T) #each row is stationId, month, and average AQI
+# gather the sf's
+point_data_cn = st_as_sf(obs_cn, coords=c("lon","lat"), crs=4326) #make into point sf
+
+# group Hyderabad
+obs_hyd = station_hy %>%
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+obs_hyd = merge(obs_hyd, stations, by="StationId",all.x = T) #each row is stationId, month, and average AQI
+# gather the sf's
+point_data_hyd = st_as_sf(obs_hyd, coords=c("lon","lat"), crs=4326) #make into point sf
+
+# group Kolkata
+obs_ko = station_ko %>%
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+obs_ko = merge(obs_ko, stations, by="StationId",all.x = T) #each row is stationId, month, and average AQI
+# gather the sf's
+point_data_ko = st_as_sf(obs_ko, coords=c("lon","lat"), crs=4326) #make into point sf
+
+
+#group India
+all_group = all_india_19_dates %>% 
+  mutate(month = format(Date, "%m"), year = format(Date, "%Y")) %>% 
+  filter(year=="2018" | year=="2019" | year=="2020" ) %>%
+  group_by(StationId, month, year) %>% summarise(aq = mean(AQI,na.rm = TRUE))
+all_group = merge(all_group, stations, by="StationId",all.x = T)
+# gather the sf's
+point_data = st_as_sf(all_group, coords=c("lon","lat"), crs=4326) #make into point sf
+
+#get outlines
+city_polygon <- getbb("Mumbai",
+                      featuretype = "settlement",
+                      format_out = "polygon")
+delhi_polygon = getbb("Delhi", featuretype = "settlement",
+                      format_out = "polygon")
+bg_polygon = getbb("Bangalore", featuretype = "settlement",
+                      format_out = "polygon")
+cn_polygon = getbb("Chennai", featuretype = "settlement",
+                      format_out = "polygon")
+hyd_polygon = getbb("Hyderabad", featuretype = "settlement",
+                      format_out = "polygon")
+mumbai_outline = geojson_sf('day11/mumbai_outline.geojson') #get city extent outline
+india_outline = geojson_sf("ind_adm1_states_official.geojson") #get India extent outline with states
+delhi_outline = geojson_sf("day11/delhi_nct.geojson") #get India extent outline with states
+bg_outline = geojson_sf("day11/bangalore.geojson")
+cn_outline = geojson_sf("day11/chennai_wards.geojson")
+hyd_outline = geojson_sf("day11/hyderabad_wards.geojson")
+ko_outline = geojson_sf("day11/kolkata.geojson")
+
+# India
+ggplot() + 
+  geom_sf(data = india_outline, fill = "#000000", size = 0.1, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") + 
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in India, 2019", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+```
+
+```{r cities}
+#Delhi
+ggplot() + 
+  geom_sf(data = delhi_outline, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data_delhi,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") + 
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+      legend.title = element_text("Air Quality"),
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in Delhi, 2018-2020", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+ggsave("day11/day11_delhi.png")
+
+#Bangalore
+ggplot() + 
+  geom_sf(data = bg_outline, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data_bg,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") + 
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in Bangalore, 2018-2020", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+ggsave("day11/day11_bangalore.png")
+
+
+#Chennai
+ggplot() + 
+  geom_sf(data = cn_outline, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data_cn,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") + 
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in Chennai, 2018-2020", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+ggsave("day11/day11_chennai.png")
+
+
+#Hyderabad
+ggplot() + 
+  geom_sf(data = hyd_outline, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data_hyd,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") + 
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in Hyderabad, 2018-2020", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+ggsave("day11/day11_hyderabad.png")
+
+#Kolkata
+ggplot() + 
+  geom_sf(data = ko_outline, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data_ko,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") + 
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in Kolkata, 2018-2020", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+ggsave("day11/day11_kolkata.png")
+
+#Mumbai
+ggplot() + 
+    geom_sf(data = mumbai_outline, fill = "#000000", size = 0.3, color = "#909090", alpha = 0.5) +
+  geom_sf(data = point_data_mumbai,aes(color = aq)) +
+  scale_color_gradient(low = "white",high = "darkred",name = "Air Quality Index \n(monthly avg)") +
+  facet_grid(year ~ month) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color="black"), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    panel.background = element_rect(fill = NA),
+     panel.border = element_blank(), 
+     legend.position = "right", 
+     axis.text.x = element_blank(), 
+     axis.text.y = element_blank(), 
+     axis.ticks = element_blank()) + 
+  labs(x = "", y = "", title = "Air Quality in Mumbai, 2018-2020", subtitle = "Monthly AQI Averages", caption = "@jaanekaraster | Data: Kaggle, OSM")
+ggsave("day11/day11_mumbai.png")
+#library(RColorBrewer)
+#pal <- brewer.pal(7, "Reds") # we select 7 colors from the palette
+
+```
+
+
+
